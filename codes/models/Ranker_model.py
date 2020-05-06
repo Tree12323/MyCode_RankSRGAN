@@ -88,18 +88,21 @@ class Ranker_Model(BaseModel):
             self.label = self.label_score1 >= self.label_score2  # get a ByteTensor
             # transfer into FloatTensor
             self.label = self.label.float()
+            # label取值 -1 or 1
             self.label = (self.label - 0.5) * 2
 
 
     def optimize_parameters(self, step):
         self.optimizer_R.zero_grad()
+        # 使用Rank计算image对应的score
         self.predict_score1 = self.netR(self.input_img1)
         self.predict_score2 = self.netR(self.input_img2)
 
-
+        # 限制score的范围
         self.predict_score1 = torch.clamp(self.predict_score1, min=-5, max=5)
         self.predict_score2 = torch.clamp(self.predict_score2, min=-5, max=5)
 
+        # 计算MarginRankLoss，最小化l_rank
         l_rank = self.RankLoss(self.predict_score1, self.predict_score2, self.label)
 
         l_rank.backward()

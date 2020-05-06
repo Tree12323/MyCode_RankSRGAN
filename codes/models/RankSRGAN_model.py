@@ -145,15 +145,17 @@ class SRGANModel(BaseModel):
             self.var_ref = input_ref.to(self.device)
 
     def optimize_parameters(self, step):
-        # G
+        # 优化Generator
         for p in self.netD.parameters():
             p.requires_grad = False
 
         self.optimizer_G.zero_grad()
+        # 生成fake
         self.fake_H = self.netG(self.var_L)
 
         l_g_total = 0
         if step % self.D_update_ratio == 0 and step > self.D_init_iters:
+            # Perceptual loss
             if self.cri_pix:  # pixel loss
                 l_g_pix = self.l_pix_w * self.cri_pix(self.fake_H, self.var_H)
                 l_g_total += l_g_pix
@@ -163,6 +165,7 @@ class SRGANModel(BaseModel):
                 l_g_fea = self.l_fea_w * self.cri_fea(fake_fea, real_fea)
                 l_g_total += l_g_fea
 
+            # Adversarial loss
             pred_g_fake = self.netD(self.fake_H)
             if self.opt['train']['gan_type'] == 'gan':
                 l_g_gan = self.l_gan_w * self.cri_gan(pred_g_fake, True)
@@ -173,17 +176,18 @@ class SRGANModel(BaseModel):
                     self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
             l_g_total += l_g_gan
 
+            # Rank-content loss（提前训练好Rank，读取Rank的权重）
             if self.l_R_w > 0:     # rank-content loss
                 l_g_rank = self.netR(self.fake_H)
                 l_g_rank = torch.sigmoid(l_g_rank-self.R_bias)
                 l_g_rank = torch.sum(l_g_rank)
                 l_g_rank = self.l_R_w*l_g_rank
                 l_g_total += l_g_rank
-
+            # L_g的损失函数和SRGAN相比，加上rank
             l_g_total.backward()
             self.optimizer_G.step()
 
-        # D
+        # Discriminatot和一半GAN的一样
         for p in self.netD.parameters():
             p.requires_grad = True
 

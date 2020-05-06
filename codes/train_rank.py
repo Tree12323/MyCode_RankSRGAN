@@ -28,6 +28,7 @@ def init_dist(backend='nccl', **kwargs):
 
 def main():
     #### options
+    #### 参数设置
     parser = argparse.ArgumentParser()
     parser.add_argument('-opt', type=str, help='Path to option YAML file.')
     parser.add_argument('--launcher', choices=['none', 'pytorch'], default='none',
@@ -38,6 +39,7 @@ def main():
     label_path = opt['datasets']['val']['dataroot_label_file']
 
     #### distributed training settings
+    #### 分布训练
     if args.launcher == 'none':  # disabled distributed training
         opt['dist'] = False
         rank = -1
@@ -49,6 +51,7 @@ def main():
         rank = torch.distributed.get_rank()
 
     #### loading resume state if exists
+    #### 载入checkpoint
     if opt['path'].get('resume_state', None):
         # distributed resuming: all load into default GPU
         device_id = torch.cuda.current_device()
@@ -59,6 +62,7 @@ def main():
         resume_state = None
 
     #### mkdir and loggers
+    #### 创建一系列目录
     if rank <= 0:  # normal training (rank -1) OR distributed training (rank 0)
         if resume_state is None:
             util.mkdir_and_rename(
@@ -89,6 +93,7 @@ def main():
     opt = option.dict_to_nonedict(opt)
 
     #### random seed
+    #### 随机种子
     seed = opt['train']['manual_seed']
     if seed is None:
         seed = random.randint(1, 10000)
@@ -100,6 +105,7 @@ def main():
     # torch.backends.cudnn.deterministic = True
 
     #### create train and val dataloader
+    #### 创建数据集
     dataset_ratio = 200  # enlarge the size of each epoch
     for phase, dataset_opt in opt['datasets'].items():
         if phase == 'train':
@@ -129,9 +135,11 @@ def main():
     assert train_loader is not None
 
     #### create model
+    #### 模型创建
     model = create_model(opt)
 
     #### resume training
+    #### 载入checkpoint
     if resume_state:
         logger.info('Resuming training from epoch: {}, iter: {}.'.format(
             resume_state['epoch'], resume_state['iter']))
@@ -152,12 +160,15 @@ def main():
             current_step += 1
             if current_step > total_iters:
                 break
+
+            #### --------------------------训练开始
             #### update learning rate
             model.update_learning_rate(current_step, warmup_iter=opt['train']['warmup_iter'])
 
             #### training
             model.feed_data(train_data)
             model.optimize_parameters(current_step)
+            #### --------------------------训练结束
 
             #### log
             if current_step % opt['logger']['print_freq'] == 0:

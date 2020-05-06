@@ -21,6 +21,7 @@ class SRGANModel(BaseModel):
         train_opt = opt['train']
 
         # define networks and load pretrained models
+        # 定义网络 Generator 和 Discriminator
         self.netG = networks.define_G(opt).to(self.device)
         if opt['dist']:
             self.netG = DistributedDataParallel(self.netG, device_ids=[torch.cuda.current_device()])
@@ -38,6 +39,7 @@ class SRGANModel(BaseModel):
             self.netD.train()
 
         # define losses, optimizer and scheduler
+        # 定义损失函数 l1 or l2(MSE) -> self.cri_pix
         if self.is_train:
             # G pixel loss
             if train_opt['pixel_weight'] > 0:
@@ -54,6 +56,7 @@ class SRGANModel(BaseModel):
                 self.cri_pix = None
 
             # G feature loss
+            # 定义Generator的损失函数 l1 or l2 -> self.cri_fea
             if train_opt['feature_weight'] > 0:
                 l_fea_type = train_opt['feature_criterion']
                 if l_fea_type == 'l1':
@@ -66,6 +69,7 @@ class SRGANModel(BaseModel):
             else:
                 logger.info('Remove feature loss.')
                 self.cri_fea = None
+            # 载入VGG的损失函数
             if self.cri_fea:  # load VGG perceptual loss
                 self.netF = networks.define_F(opt, use_bn=False).to(self.device)
                 if opt['dist']:
@@ -137,19 +141,24 @@ class SRGANModel(BaseModel):
             p.requires_grad = False
 
         self.optimizer_G.zero_grad()
+        # fake:LR -> HR
         self.fake_H = self.netG(self.var_L)
 
         l_g_total = 0
         if step % self.D_update_ratio == 0 and step > self.D_init_iters:
+            # 计算pixel loss 损失函数l1，（fake_HR, real_HR）
             if self.cri_pix:  # pixel loss
                 l_g_pix = self.l_pix_w * self.cri_pix(self.fake_H, self.var_H)
                 l_g_total += l_g_pix
+
+            # 生成图片 vs 真实图片的特征loss
             if self.cri_fea:  # feature loss
                 real_fea = self.netF(self.var_H).detach()
                 fake_fea = self.netF(self.fake_H)
                 l_g_fea = self.l_fea_w * self.cri_fea(fake_fea, real_fea)
                 l_g_total += l_g_fea
 
+            # Generator的损失函数
             if self.opt['train']['gan_type'] == 'gan':
                 pred_g_fake = self.netD(self.fake_H)
                 l_g_gan = self.l_gan_w * self.cri_gan(pred_g_fake, True)
@@ -161,6 +170,7 @@ class SRGANModel(BaseModel):
                     self.cri_gan(pred_g_fake - torch.mean(pred_d_real), True)) / 2
             l_g_total += l_g_gan
 
+            # 生成器的损失函数 = pixel_loss + feature_loss + gan_loss
             l_g_total.backward()
             self.optimizer_G.step()
 
@@ -172,10 +182,12 @@ class SRGANModel(BaseModel):
         if self.opt['train']['gan_type'] == 'gan':
             # need to forward and backward separately, since batch norm statistics differ
             # real
+            # real的损失函数
             pred_d_real = self.netD(self.var_ref)
             l_d_real = self.cri_gan(pred_d_real, True)
             l_d_real.backward()
             # fake
+            # fake的损失函数
             pred_d_fake = self.netD(self.fake_H.detach())  # detach to avoid BP to G
             l_d_fake = self.cri_gan(pred_d_fake, False)
             l_d_fake.backward()

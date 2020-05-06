@@ -36,6 +36,7 @@ def main():
     opt = option.parse(args.opt, is_train=True)
 
     #### distributed training settings
+    #### 分布训练设置
     if args.launcher == 'none':  # disabled distributed training
         opt['dist'] = False
         rank = -1
@@ -47,6 +48,7 @@ def main():
         rank = torch.distributed.get_rank()
 
     #### loading resume state if exists
+    #### 载入checkpoint
     if opt['path'].get('resume_state', None):
         # distributed resuming: all load into default GPU
         device_id = torch.cuda.current_device()
@@ -57,6 +59,7 @@ def main():
         resume_state = None
 
     #### mkdir and loggers
+    #### 创建目录
     if rank <= 0:  # normal training (rank -1) OR distributed training (rank 0)
         if resume_state is None:
             util.mkdir_and_rename(
@@ -84,9 +87,11 @@ def main():
         logger = logging.getLogger('base')
 
     # convert to NoneDict, which returns None for missing keys
+    # 参数转换list
     opt = option.dict_to_nonedict(opt)
 
-    #### random seed
+    #### random 
+    #### 随机种子
     seed = opt['train']['manual_seed']
     if seed is None:
         seed = random.randint(1, 10000)
@@ -98,6 +103,7 @@ def main():
     # torch.backends.cudnn.deterministic = True
 
     #### create train and val dataloader
+    #### 创建数据集
     dataset_ratio = 200  # enlarge the size of each epoch
     for phase, dataset_opt in opt['datasets'].items():
         if phase == 'train':
@@ -127,9 +133,11 @@ def main():
     assert train_loader is not None
 
     #### create model
+    #### 创建模型
     model = create_model(opt)
 
     #### resume training
+    #### 记录训练进程
     if resume_state:
         logger.info('Resuming training from epoch: {}, iter: {}.'.format(
             resume_state['epoch'], resume_state['iter']))
@@ -142,6 +150,7 @@ def main():
         start_epoch = 0
 
     #### training
+    #### 训练
     logger.info('Start training from epoch: {:d}, iter: {:d}'.format(start_epoch, current_step))
     for epoch in range(start_epoch, total_epochs + 1):
         if opt['dist']:
@@ -150,12 +159,17 @@ def main():
             current_step += 1
             if current_step > total_iters:
                 break
+                
+            #### --------------------------训练开始
             #### update learning rate
+            #### 学习率
             model.update_learning_rate(current_step, warmup_iter=opt['train']['warmup_iter'])
-
             #### training
+            #### 填入数据train_data
             model.feed_data(train_data)
+            #### 优化模型参数
             model.optimize_parameters(current_step)
+            #### --------------------------训练结束
 
             #### log
             if current_step % opt['logger']['print_freq'] == 0:
@@ -172,6 +186,7 @@ def main():
                             tb_logger.add_scalar(k, v, current_step)
                 if rank <= 0:
                     logger.info(message)
+
             #### validation
             if opt['datasets'].get('val', None) and current_step % opt['train']['val_freq'] == 0:
                 if rank <= 0:  # image restoration validation
